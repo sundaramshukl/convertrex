@@ -1,4 +1,4 @@
- import { useState } from "react";
+ import { useState, useMemo } from "react";
  import { motion } from "framer-motion";
  import { ArrowDownUp, Gem } from "lucide-react";
  import { Input } from "@/components/ui/input";
@@ -10,25 +10,44 @@
    SelectValue,
  } from "@/components/ui/select";
  import { Button } from "@/components/ui/button";
+ import { Skeleton } from "@/components/ui/skeleton";
+ import { RefreshCw, Wifi, WifiOff } from "lucide-react";
+ import { useMetalPrices } from "@/hooks/useMetalPrices";
+ import { useExchangeRates } from "@/hooks/useExchangeRates";
  
- const metals = [
-   { code: "XAU", name: "Gold", pricePerOz: 2024.5, emoji: "🥇" },
-   { code: "XAG", name: "Silver", pricePerOz: 23.15, emoji: "🥈" },
-   { code: "XPT", name: "Platinum", pricePerOz: 905.0, emoji: "⚪" },
-   { code: "XPD", name: "Palladium", pricePerOz: 1015.0, emoji: "🔘" },
-   { code: "XCU", name: "Copper", pricePerOz: 0.27, emoji: "🟤" },
+ const metalMeta = [
+   { code: "XAU", name: "Gold", emoji: "🥇" },
+   { code: "XAG", name: "Silver", emoji: "🥈" },
+   { code: "XPT", name: "Platinum", emoji: "⚪" },
+   { code: "XPD", name: "Palladium", emoji: "🔘" },
+   { code: "XCU", name: "Copper", emoji: "🟤" },
  ];
  
- const currencies = [
-   { code: "USD", symbol: "$", rate: 1 },
-   { code: "EUR", symbol: "€", rate: 0.92 },
-   { code: "GBP", symbol: "£", rate: 0.79 },
-   { code: "JPY", symbol: "¥", rate: 149.5 },
-   { code: "INR", symbol: "₹", rate: 83.12 },
-   { code: "CHF", symbol: "Fr", rate: 0.88 },
-   { code: "AUD", symbol: "A$", rate: 1.53 },
-   { code: "CAD", symbol: "C$", rate: 1.36 },
+ const currencyMeta = [
+   { code: "USD", symbol: "$" },
+   { code: "EUR", symbol: "€" },
+   { code: "GBP", symbol: "£" },
+   { code: "JPY", symbol: "¥" },
+   { code: "INR", symbol: "₹" },
+   { code: "CHF", symbol: "Fr" },
+   { code: "AUD", symbol: "A$" },
+   { code: "CAD", symbol: "C$" },
  ];
+ 
+ // Fallback prices in USD per troy ounce
+ const fallbackMetalPrices: Record<string, number> = {
+   XAU: 2650.00,
+   XAG: 31.50,
+   XPT: 985.00,
+   XPD: 950.00,
+   XCU: 0.28,
+ };
+ 
+ // Fallback exchange rates
+ const fallbackRates: Record<string, number> = {
+   USD: 1, EUR: 0.92, GBP: 0.79, JPY: 149.5,
+   INR: 83.12, CHF: 0.88, AUD: 1.53, CAD: 1.36,
+ };
  
  const weightUnits = [
    { code: "oz", name: "Troy Ounce", factor: 1 },
@@ -44,21 +63,56 @@
    const [weightUnit, setWeightUnit] = useState("oz");
    const [currency, setCurrency] = useState("USD");
  
-   const calculatePrice = (): number => {
-     const metalData = metals.find((m) => m.code === metal);
-     const unitData = weightUnits.find((u) => u.code === weightUnit);
-     const currencyData = currencies.find((c) => c.code === currency);
+   const { data: metalData, isLoading: metalsLoading, refetch: refetchMetals, isFetching: metalsFetching } = useMetalPrices();
+   const { data: ratesData, isLoading: ratesLoading, refetch: refetchRates, isFetching: ratesFetching } = useExchangeRates();
  
-     if (!metalData || !unitData || !currencyData) return 0;
+   const metalPrices = useMemo(() => {
+     if (metalData?.success && metalData.metals) {
+       return metalData.metals;
+     }
+     return fallbackMetalPrices;
+   }, [metalData]);
+ 
+   const exchangeRates = useMemo(() => {
+     if (ratesData?.success && ratesData.rates) {
+       return ratesData.rates;
+     }
+     return fallbackRates;
+   }, [ratesData]);
+ 
+   const isLive = metalData?.source === 'live' || ratesData?.success;
+   const isLoading = metalsLoading || ratesLoading;
+   const isFetching = metalsFetching || ratesFetching;
+ 
+   const lastUpdated = useMemo(() => {
+     if (metalData?.lastUpdated) {
+       const date = new Date(metalData.lastUpdated);
+       return date.toLocaleString();
+     }
+     return null;
+   }, [metalData]);
+ 
+   const handleRefresh = () => {
+     refetchMetals();
+     refetchRates();
+   };
+ 
+   const calculatePrice = (): number => {
+     const unitData = weightUnits.find((u) => u.code === weightUnit);
+ 
+     if (!unitData) return 0;
+ 
+     const pricePerOz = metalPrices[metal] || 0;
+     const rate = exchangeRates[currency] || 1;
  
      const weightInOz = (parseFloat(weight) || 0) * unitData.factor;
-     const priceInUsd = weightInOz * metalData.pricePerOz;
-     return priceInUsd * currencyData.rate;
+     const priceInUsd = weightInOz * pricePerOz;
+     return priceInUsd * rate;
    };
  
    const result = calculatePrice();
-   const currencyData = currencies.find((c) => c.code === currency);
-   const metalData = metals.find((m) => m.code === metal);
+   const currencyInfo = currencyMeta.find((c) => c.code === currency);
+   const metalInfo = metalMeta.find((m) => m.code === metal);
  
    return (
      <motion.div
@@ -74,6 +128,35 @@
          <h2 className="text-xl font-display font-semibold text-gradient-metals">
            Metal Price Calculator
          </h2>
+         <Button
+           variant="ghost"
+           size="sm"
+           onClick={handleRefresh}
+           disabled={isFetching}
+           className="ml-auto"
+         >
+           <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+         </Button>
+       </div>
+ 
+       {/* Live rate indicator */}
+       <div className="flex items-center gap-2 mb-4 text-xs">
+         {isLive ? (
+           <span className="flex items-center gap-1 text-emerald-500">
+             <Wifi className="w-3 h-3" />
+             Live prices
+           </span>
+         ) : (
+           <span className="flex items-center gap-1 text-amber-500">
+             <WifiOff className="w-3 h-3" />
+             Offline prices
+           </span>
+         )}
+         {lastUpdated && (
+           <span className="text-muted-foreground">
+             Updated: {lastUpdated}
+           </span>
+         )}
        </div>
  
        <div className="space-y-4">
@@ -85,7 +168,7 @@
                  <SelectValue />
                </SelectTrigger>
                <SelectContent>
-                 {metals.map((m) => (
+                 {metalMeta.map((m) => (
                    <SelectItem key={m.code} value={m.code}>
                      <span className="mr-2">{m.emoji}</span>
                      <span className="font-medium">{m.name}</span>
@@ -102,7 +185,7 @@
                  <SelectValue />
                </SelectTrigger>
                <SelectContent>
-                 {currencies.map((c) => (
+                 {currencyMeta.map((c) => (
                    <SelectItem key={c.code} value={c.code}>
                      <span className="font-medium">{c.symbol}</span>
                      <span className="text-muted-foreground ml-2 text-sm">
@@ -147,34 +230,44 @@
            </div>
          </div>
  
-         <motion.div
+         {isLoading ? (
+           <div className="mt-6 p-5 rounded-xl bg-muted/50 border border-metals/20">
+             <Skeleton className="h-4 w-32 mb-2" />
+             <Skeleton className="h-10 w-48 mb-2" />
+             <Skeleton className="h-4 w-40" />
+           </div>
+         ) : (
+           <motion.div
            key={`${metal}-${weight}-${weightUnit}-${currency}`}
            initial={{ opacity: 0, scale: 0.95 }}
            animate={{ opacity: 1, scale: 1 }}
            className="mt-6 p-5 rounded-xl bg-muted/50 border border-metals/20"
          >
            <p className="text-sm text-muted-foreground mb-1">
-             {metalData?.emoji} {metalData?.name} Value
+             {metalInfo?.emoji} {metalInfo?.name} Value
            </p>
            <p className="text-3xl font-display font-bold text-metals">
-             {currencyData?.symbol}
+             {currencyInfo?.symbol}
              {result.toLocaleString(undefined, {
                minimumFractionDigits: 2,
                maximumFractionDigits: 2,
              })}
            </p>
            <p className="text-sm text-muted-foreground mt-2">
-             1 oz = {currencyData?.symbol}
+             1 oz = {currencyInfo?.symbol}
              {(
-               (metalData?.pricePerOz || 0) * (currencyData?.rate || 1)
+               (metalPrices[metal] || 0) * (exchangeRates[currency] || 1)
              ).toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
              {currency}
            </p>
          </motion.div>
+         )}
  
          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mt-4">
-           {metals.map((m) => {
-             const price = m.pricePerOz * (currencyData?.rate || 1);
+           {metalMeta.map((m) => {
+             const pricePerOz = metalPrices[m.code] || 0;
+             const rate = exchangeRates[currency] || 1;
+             const price = pricePerOz * rate;
              return (
                <motion.div
                  key={m.code}
@@ -190,7 +283,7 @@
                    {m.emoji} {m.name}
                  </p>
                  <p className="text-sm font-semibold">
-                   {currencyData?.symbol}
+                   {currencyInfo?.symbol}
                    {price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                  </p>
                </motion.div>
