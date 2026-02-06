@@ -45,7 +45,7 @@ const Index = () => {
             </span>
           </div>
           <h1 className="text-4xl md:text-6xl font-display font-bold mb-4">
-            <span className="text-gradient-primary">Convert</span> Every
+            <span className="text-gradient-primary">Convert</span> Everything
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             Currency, units, precious metals, and file formats — all in one
