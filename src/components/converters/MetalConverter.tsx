@@ -24,7 +24,7 @@
  ];
  
  const currencyMeta = [
-   { code: "USD", symbol: "$" },
+   { code: "USDDDD", symbol: "$" },
    { code: "EUR", symbol: "€" },
    { code: "GBP", symbol: "£" },
    { code: "JPY", symbol: "¥" },
